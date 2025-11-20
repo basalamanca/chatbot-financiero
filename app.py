@@ -4,163 +4,174 @@ import tempfile
 import os
 import time
 
-# --- CONFIGURACIÓN VISUAL ---
-st.set_page_config(page_title="Analista de Crédito IA", page_icon="💰", layout="wide")
+# --- CONFIGURACIÓN DE LA PÁGINA ---
+st.set_page_config(page_title="Analista Financiero IA", page_icon="📊", layout="wide")
 
-# Título y descripción
-st.title("🏦 Analista de Riesgo Financiero IA")
+st.title("🤖 Analista de Riesgo Financiero (Multi-Documento)")
 st.markdown("""
-Esta herramienta analiza Estados Financieros en PDF utilizando Inteligencia Artificial.
+Sube los Estados Financieros (PDF).
 **Instrucciones:**
-1. Ingresa la Llave de API en el menú izquierdo.
-2. Sube uno o varios PDFs (Estados de Situación Financiera y Resultados).
-3. Haz clic en 'Analizar'.
+1. Puedes cargar un solo archivo o varios (comparativos).
+2. El sistema detectará automáticamente la información.
+3. Haz clic en **"Analizar Documentos"**.
 """)
 
-# --- BARRA LATERAL (CONFIGURACIÓN) ---
-with st.sidebar:
-    st.header("🔐 Configuración")
-    # Campo para que el comercial ponga la llave (o tú se la des)
-    api_key = st.text_input("Ingresa la Google API Key", type="password")
+# --- CONFIGURACIÓN DE API (LLAVE FIJA) ---
+# Tu llave ya está configurada aquí para que el comercial no tenga que ponerla.
+api_key = "AIzaSyBQwo3Mt9prYyvlQJrOq2NdJ4hpCDtTN-o"
+
+# Configurar Gemini
+try:
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-2.0-flash-001')
+except Exception as e:
+    st.error(f"Error en la configuración de API: {str(e)}")
+
+# --- FUNCIÓN PRINCIPAL DE ANÁLISIS ---
+def analizar_documentos(uploaded_files):
+    gemini_files = []
+    temp_paths = []
     
-    st.divider()
-    st.info("El sistema acepta archivos con cualquier nombre y múltiples documentos al tiempo.")
+    # Espacios para mostrar estado
+    status_text = st.empty()
+    progress_bar = st.progress(0)
 
-# --- LÓGICA PRINCIPAL ---
-if api_key:
     try:
-        genai.configure(api_key=api_key)
-        # Usamos el modelo que te funcionó
-        model = genai.GenerativeModel('gemini-2.0-flash-001')
-    except Exception as e:
-        st.error(f"Error en la API Key: {e}")
+        # 1. PROCESAR Y SUBIR CADA ARCHIVO
+        for i, uploaded_file in enumerate(uploaded_files):
+            status_text.text(f"📤 Subiendo archivo {i+1}/{len(uploaded_files)}: {uploaded_file.name}...")
+            
+            # Crear archivo temporal
+            suffix = os.path.splitext(uploaded_file.name)[1]
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+                tmp_file.write(uploaded_file.getvalue())
+                tmp_path = tmp_file.name
+                temp_paths.append(tmp_path)
 
-    # --- SUBIDA DE ARCHIVOS ---
-    uploaded_files = st.file_uploader(
-        "📂 Sube los Estados Financieros (PDF)", 
-        type=["pdf"], 
-        accept_multiple_files=True
-    )
+            # Subir a Google Gemini
+            g_file = genai.upload_file(path=tmp_path, display_name=uploaded_file.name)
+            
+            # Esperar procesamiento
+            while g_file.state.name == "PROCESSING":
+                time.sleep(1)
+                g_file = genai.get_file(g_file.name)
+            
+            if g_file.state.name == "FAILED":
+                st.error(f"Falló la lectura del archivo: {uploaded_file.name}")
+                return None
 
-    # Botón de Análisis
-    if st.button("🚀 Analizar Documentos", type="primary", disabled=not uploaded_files):
+            gemini_files.append(g_file)
+            progress_bar.progress((i + 1) / len(uploaded_files) * 0.5)
+
+        status_text.text("🧠 Analizando información cruzada y calculando Score...")
+        progress_bar.progress(0.75)
+
+        # 2. PROMPT MAESTRO (REGLAS DE NEGOCIO ROBUSTAS)
+        prompt = """
+        Actúa como un Vicepresidente de Riesgo de Crédito Senior.
+        Analiza la información contenida en LOS DOCUMENTOS ADJUNTOS.
         
-        if not uploaded_files:
-            st.warning("Por favor sube al menos un archivo.")
-        else:
-            # BARRA DE PROGRESO
-            progress_text = "Iniciando operación..."
-            my_bar = st.progress(0, text=progress_text)
-            
-            gemini_files = []
-            temp_paths = []
+        Tu trabajo es UNIFICAR la información, identificar las fechas de corte de cada documento y realizar el análisis comparativo.
 
-            try:
-                # 1. PROCESAR ARCHIVOS (Sin importar el nombre)
-                for i, uploaded_file in enumerate(uploaded_files):
-                    my_bar.progress((i + 1) / len(uploaded_files) * 0.3, text=f"Subiendo {uploaded_file.name}...")
-                    
-                    # Crear archivo temporal para enviarlo a Google
-                    # (Esto soluciona el problema de los nombres)
-                    suffix = os.path.splitext(uploaded_file.name)[1]
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-                        tmp_file.write(uploaded_file.getvalue())
-                        tmp_path = tmp_file.name
-                        temp_paths.append(tmp_path)
+        Sigue ESTRICTAMENTE estas reglas de negocio para el informe:
 
-                    # Subir a la nube de Gemini
-                    g_file = genai.upload_file(path=tmp_path, display_name=uploaded_file.name)
-                    
-                    # Esperar a que Google procese el archivo
-                    while g_file.state.name == "PROCESSING":
-                        time.sleep(1)
-                        g_file = genai.get_file(g_file.name)
-                    
-                    gemini_files.append(g_file)
+        === 1. NORMALIZACIÓN DE PERIODOS ===
+        - Identifica las fechas de los documentos.
+        - Si comparas un CORTE (ej. Junio) vs un AÑO COMPLETO (Dic):
+          * Para Crecimiento en Ventas: Calcula el PROMEDIO MENSUAL de cada periodo y compara esos promedios.
 
-                my_bar.progress(0.5, text="🧠 Analizando datos financieros y calculando Score...")
+        === 2. CÁLCULO DEL SCORE (VARIABLES 1 a 7 PUNTOS) ===
+        Calcula cada indicador. Si cumple = 7 pts, Si no = 0 o 1 pt (según se indique).
 
-                # 2. EL PROMPT MAESTRO (Tus reglas de negocio)
-                prompt = """
-                Actúa como un Vicepresidente de Riesgo de Crédito Senior.
-                Analiza la información contenida en LOS DOCUMENTOS ADJUNTOS (unificados).
+        1. Crecimiento Ventas (>Inflación/10%): SI=7 | NO=0
+        2. Crecimiento Margen Bruto (>= año anterior): SI=7 | NO=1
+        3. Margen Operacional (Positivo): SI=7 | NO=0
+        4. Endeudamiento (Saludable <70%): SI=7 | NO=0
+        5. Razón Corriente (>0.9): SI=7 | NO=0
+        6. Capital Pagado (>10% del Patrimonio): SI=7 | NO=0
+        7. Utilidad Acumulada (Positiva): SI=7 | NO=0
+        8. Rotación CXC (<=90 días): SI=7 | NO=0
+        9. Rotación CXP (<=120 días): SI=7 | NO=0
+        10. Relación Rotaciones (Días CXC > Días CXP): SI=7 | NO=0
+        11. Tamaño Empresa (Ventas Anuales Proyectadas):
+            - >10.000MM = 7 pts
+            - 3.000-10.000MM = 3 pts
+            - <3.000MM = 0 pts
+        12. Capital de Trabajo (Positivo): SI=7 | NO=0
 
-                Sigue ESTRICTAMENTE estas reglas de negocio para el informe:
+        --- PENALIZACIÓN ---
+        13. Patrimonio Negativo: Si existe, RESTA 14 PUNTOS a la suma total de puntos antes de promediar.
 
-                === 1. NORMALIZACIÓN DE PERIODOS ===
-                - Si comparas un CORTE (ej. Junio) vs un AÑO COMPLETO (Dic):
-                * Para Crecimiento en Ventas: Calcula el PROMEDIO MENSUAL de cada periodo y compara esos promedios.
+        >>> CÁLCULO SCORE FINAL = (Suma de puntos - Penalizaciones) / 12.
 
-                === 2. CÁLCULO DEL SCORE (VARIABLES 1 a 7 PUNTOS) ===
-                Calcula cada indicador. Si cumple = 7 pts, Si no = 0 o 1 pt.
+        === 3. SUGERENCIA DE LÍNEA (Orden de Prioridad) ===
+        A. "FACTORING ENDOSO CON PAGADORES AAA": 
+           - Sugerir SI: Score < 3 OR Margen Op Negativo OR Patrimonio Negativo OR Endeudamiento > 80%.
+        
+        B. "CONFIRMING": 
+           - Sugerir SI: Score entre 6 y 7 AND Ventas Anuales > 30.000 Millones AND No tiene causales de línea A.
+           - NOTA OBLIGATORIA: "Sujeto a estudio de endosables como fuente de pago y calidad de clientes en facturacion".
+        
+        C. "FACTORING": 
+           - Sugerir en cualquier otro caso (ej: Score 3-5.9, o Score alto con ventas bajas).
 
-                1. Crecimiento Ventas (>Inflación/10%): SI=7 | NO=0
-                2. Crecimiento Margen Bruto (>= año anterior): SI=7 | NO=1
-                3. Margen Operacional (Positivo): SI=7 | NO=0
-                4. Endeudamiento (Saludable <70%): SI=7 | NO=0
-                5. Razón Corriente (>0.9): SI=7 | NO=0
-                6. Capital Pagado (>10% del Patrimonio): SI=7 | NO=0
-                7. Utilidad Acumulada (Positiva): SI=7 | NO=0
-                8. Rotación CXC (<=90 días): SI=7 | NO=0
-                9. Rotación CXP (<=120 días): SI=7 | NO=0
-                10. Relación Rotaciones (Días CXC > Días CXP): SI=7 | NO=0
-                11. Tamaño Empresa (Ventas Anuales):
-                    - >10.000MM = 7 pts
-                    - 3.000-10.000MM = 3 pts
-                    - <3.000MM = 0 pts
-                12. Capital de Trabajo (Positivo): SI=7 | NO=0
+        === 4. CUPO SUGERIDO ===
+        - Base de cálculo: Ventas de UN MES (Promedio del último periodo disponible).
+        - Si la línea es Factoring Endoso AAA: Cupo = 20% de un mes.
+        - Si la línea es Factoring/Confirming: Cupo = 100% de un mes.
+        - TOPE MÁXIMO GLOBAL: 5.000 Millones de pesos. (Si el cálculo da más, ajusta a 5.000).
+        - Si cupo > 500 Millones: Agregar nota "Sujeto a castigo por sector según tabla".
 
-                --- PENALIZACIÓN ---
-                13. Patrimonio Negativo: RESTA 14 PUNTOS a la suma total.
+        === SALIDA ===
+        Genera un informe ejecutivo limpio en formato Markdown.
+        Estructura requerida:
+        1. **Detalle del Score:** Lista los 12 indicadores, mostrando el Valor Real calculado y los Puntos asignados. Muestra la penalización si aplica.
+        2. **Resultados Finales:** Score Final (1 decimal) y Nivel de Riesgo (Bajo/Medio/Alto).
+        3. **Estructuración:** Línea Sugerida (con notas si aplican) y Cupo Sugerido (Valor en millones COP).
+        4. **Alertas:** Lista de alertas detectadas (Patrimonio negativo, iliquidez, etc).
+        """
 
-                >>> SCORE FINAL = (Suma puntos - Penalizaciones) / 12.
+        # 3. ENVIAR A GEMINI
+        # Gemini recibe una lista: [prompt, archivo1, archivo2...]
+        request_content = [prompt] + gemini_files
+        
+        response = model.generate_content(request_content)
+        
+        status_text.text("✅ Análisis completado.")
+        progress_bar.progress(1.0)
+        
+        return response.text
 
-                === 3. SUGERENCIA DE LÍNEA (Orden de Prioridad) ===
-                A. "FACTORING ENDOSO CON PAGADORES AAA": Si Score < 3 OR Margen Op Negativo OR Patrimonio Negativo OR Endeudamiento > 80%.
-                B. "CONFIRMING": Si Score 6-7 AND Ventas > 30.000 Millones AND Todo OK. 
-                * Nota obligatoria: "Sujeto a estudio de endosables como fuente de pago y calidad de clientes en facturacion".
-                C. "FACTORING": Cualquier otro caso (Score 3-5.9 o Score alto con ventas bajas).
+    except Exception as e:
+        st.error(f"Ocurrió un error durante el análisis: {str(e)}")
+        return None
+    
+    finally:
+        # 4. LIMPIEZA DE ARCHIVOS (Borrar de la nube y local)
+        for g_file in gemini_files:
+            try: g_file.delete()
+            except: pass
+        for path in temp_paths:
+            try: os.unlink(path)
+            except: pass
 
-                === 4. CUPO SUGERIDO ===
-                - Base: Ventas de UN MES (Promedio del último periodo disponible).
-                - Si es Factoring Endoso AAA: 20% de un mes.
-                - Si es Factoring/Confirming: 100% de un mes.
-                - TOPE MÁXIMO: 5.000 Millones.
-                - Si cupo > 500 Millones: Nota "Sujeto a castigo por sector".
+# --- INTERFAZ DE USUARIO ---
+col1, col2 = st.columns([1, 2])
 
-                === SALIDA ===
-                Genera un informe ejecutivo limpio en Markdown. Usa tablas si es necesario.
-                Estructura:
-                1. Detalle de Score (Lista punto por punto con valor real y puntaje asignado).
-                2. Score Final y Nivel de Riesgo (Bajo/Medio/Alto).
-                3. Estructuración (Línea Sugerida y Cupo en Millones).
-                4. Alertas de Riesgo detectadas.
-                """
+with col1:
+    st.info("Sube aquí los archivos PDF (Balance, Estado de Resultados, Comparativos).")
+    # ACEPTA MÚLTIPLES ARCHIVOS
+    uploaded_files = st.file_uploader("Cargar PDFs", type=["pdf"], accept_multiple_files=True)
+    
+    analyze_btn = st.button("🔍 Analizar Documentos", type="primary", disabled=not uploaded_files)
 
-                # 3. ENVIAR A GEMINI
-                request_content = [prompt] + gemini_files
-                response = model.generate_content(request_content)
-                
-                my_bar.progress(1.0, text="¡Análisis completado!")
-                time.sleep(0.5)
-                my_bar.empty()
-
-                # 4. MOSTRAR RESULTADO
-                st.success("✅ Análisis generado exitosamente")
-                st.markdown("---")
-                st.markdown(response.text)
-
-            except Exception as e:
-                st.error(f"❌ Ocurrió un error: {str(e)}")
-            
-            finally:
-                # 5. LIMPIEZA DE ARCHIVOS (Importante para no llenar tu nube)
-                for g_file in gemini_files:
-                    try: g_file.delete()
-                    except: pass
-                for path in temp_paths:
-                    try: os.unlink(path)
-                    except: pass
-
-else:
-    st.warning("👈 Por favor ingresa tu API Key en la barra lateral para comenzar.")
+with col2:
+    if analyze_btn and uploaded_files:
+        resultado = analizar_documentos(uploaded_files)
+        
+        if resultado:
+            st.success("Análisis generado con éxito")
+            st.markdown("---")
+            st.markdown(resultado)
+    elif not uploaded_files:
+        st.warning("👈 Sube al menos un archivo PDF para ver el análisis aquí.")
