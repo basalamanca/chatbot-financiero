@@ -21,6 +21,7 @@ api_key = "AIzaSyA4CBrLnh85FHGyMptRimalbMSSCMQqtbc"
 
 try:
     genai.configure(api_key=api_key)
+    # Usamos el modelo 2.0 Flash (el más eficiente para documentos)
     model = genai.GenerativeModel('gemini-2.0-flash-001')
 except Exception as e:
     st.error(f"Error en la configuración de API: {str(e)}")
@@ -30,7 +31,7 @@ def analizar_documentos(uploaded_files):
     gemini_files = []
     temp_paths = []
     
-    # Espacios para mostrar estado
+    # Espacios para mostrar estado (DEFINICIÓN INICIAL)
     status_text = st.empty()
     progress_bar = st.progress(0)
 
@@ -39,12 +40,14 @@ def analizar_documentos(uploaded_files):
         for i, uploaded_file in enumerate(uploaded_files):
             status_text.text(f"📤 Subiendo archivo {i+1}/{len(uploaded_files)}: {uploaded_file.name}...")
             
+            # Crear archivo temporal
             suffix = os.path.splitext(uploaded_file.name)[1]
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
                 tmp_path = tmp_file.name
                 temp_paths.append(tmp_path)
 
+            # Subir a Google Gemini
             g_file = genai.upload_file(path=tmp_path, display_name=uploaded_file.name)
             
             # Esperar procesamiento
@@ -57,12 +60,13 @@ def analizar_documentos(uploaded_files):
                 return None
 
             gemini_files.append(g_file)
+            # Actualizar barra de progreso (usando el nombre correcto: progress_bar)
             progress_bar.progress((i + 1) / len(uploaded_files) * 0.5)
 
         status_text.text("🧠 Analizando información cruzada y calculando Score...")
         progress_bar.progress(0.75)
 
-        # 2. PROMPT MAESTRO
+        # 2. PROMPT MAESTRO (REGLAS DE NEGOCIO ROBUSTAS)
         prompt = """
         Actúa como un Vicepresidente de Riesgo de Crédito Senior.
         Analiza la información contenida en LOS DOCUMENTOS ADJUNTOS.
@@ -98,7 +102,7 @@ def analizar_documentos(uploaded_files):
         --- PENALIZACIÓN ---
         13. Patrimonio Negativo: Si existe, RESTA 14 PUNTOS a la suma total de puntos antes de promediar.
 
-        >>> SCORE FINAL = (Suma de puntos - Penalizaciones) / 12.
+        >>> CÁLCULO SCORE FINAL = (Suma de puntos - Penalizaciones) / 12.
 
         === 3. SUGERENCIA DE LÍNEA (Orden de Prioridad) ===
         A. "FACTORING ENDOSO CON PAGADORES AAA": 
@@ -127,40 +131,22 @@ def analizar_documentos(uploaded_files):
         4. **Alertas:** Lista de alertas detectadas (Patrimonio negativo, iliquidez, etc).
         """
 
-        # 3. ENVIAR A GEMINI CON REINTENTOS (SISTEMA ANTI ERROR 429)
+        # 3. ENVIAR A GEMINI
         request_content = [prompt] + gemini_files
+        response = model.generate_content(request_content)
         
-        response = None
-        max_intentos = 3
-        espera_inicial = 10 # Segundos
+        # --- AQUÍ ESTABA EL ERROR ANTERIOR (CORREGIDO: usamos progress_bar) ---
+        progress_bar.progress(1.0, text="¡Análisis completado!")
+        time.sleep(0.5)
+        progress_bar.empty()
+        status_text.empty()
 
-        for intento in range(max_intentos):
-            try:
-                response = model.generate_content(request_content)
-                break # Si funciona, salimos del loop
-            except Exception as e:
-                error_msg = str(e)
-                if "429" in error_msg or "Resource exhausted" in error_msg:
-                    tiempo_espera = espera_inicial * (intento + 1) # Espera 10s, luego 20s...
-                    status_text.warning(f"⚠️ Tráfico alto en Google. Reintentando en {tiempo_espera} segundos... (Intento {intento+1}/{max_intentos})")
-                    time.sleep(tiempo_espera)
-                else:
-                    raise e # Si es otro error, fallamos de verdad
-
-        if response:
-            my_bar.progress(1.0, text="¡Análisis completado!")
-            time.sleep(0.5)
-            my_bar.empty()
-            status_text.empty() # Limpiar mensajes de estado
-
-            # 4. MOSTRAR RESULTADO
-            st.success("✅ Análisis generado exitosamente")
-            st.markdown("---")
-            st.markdown(response.text)
-            return response.text
-        else:
-            st.error("❌ El servicio está saturado. Por favor intenta en unos minutos.")
-            return None
+        # 4. MOSTRAR RESULTADO (Y retornarlo para confirmación)
+        st.success("✅ Análisis generado exitosamente")
+        st.markdown("---")
+        st.markdown(response.text)
+        
+        return response.text
 
     except Exception as e:
         st.error(f"❌ Ocurrió un error: {str(e)}")
