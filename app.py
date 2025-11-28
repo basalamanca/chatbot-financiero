@@ -16,14 +16,13 @@ Sube los Estados Financieros (PDF).
 3. Haz clic en **"Analizar Documentos"**.
 """)
 
-# --- CONFIGURACIÓN DE API (LLAVE ACTUALIZADA) ---
-# Nueva llave configurada fija en el código
-api_key = "AIzaSyA4CBrLnh85FHGyMptRimalbMSSCMQqtbc"
+# --- CONFIGURACIÓN DE API (LLAVE FIJA) ---
+# Tu llave ya está configurada aquí para que el comercial no tenga que ponerla.
+api_key = "AIzaSyBQwo3Mt9prYyvlQJrOq2NdJ4hpCDtTN-o"
 
 # Configurar Gemini
 try:
     genai.configure(api_key=api_key)
-    # Usamos el modelo 2.0 Flash (el más eficiente para documentos)
     model = genai.GenerativeModel('gemini-2.0-flash-001')
 except Exception as e:
     st.error(f"Error en la configuración de API: {str(e)}")
@@ -135,22 +134,20 @@ def analizar_documentos(uploaded_files):
         # 3. ENVIAR A GEMINI
         # Gemini recibe una lista: [prompt, archivo1, archivo2...]
         request_content = [prompt] + gemini_files
+        
         response = model.generate_content(request_content)
         
-        my_bar.progress(1.0, text="¡Análisis completado!")
-        time.sleep(0.5)
-        my_bar.empty()
-
-        # 4. MOSTRAR RESULTADO
-        st.success("✅ Análisis generado exitosamente")
-        st.markdown("---")
-        st.markdown(response.text)
+        status_text.text("✅ Análisis completado.")
+        progress_bar.progress(1.0)
+        
+        return response.text
 
     except Exception as e:
-        st.error(f"❌ Ocurrió un error: {str(e)}")
+        st.error(f"Ocurrió un error durante el análisis: {str(e)}")
+        return None
     
     finally:
-        # 5. LIMPIEZA DE ARCHIVOS (Importante para no llenar tu nube)
+        # 4. LIMPIEZA DE ARCHIVOS (Borrar de la nube y local)
         for g_file in gemini_files:
             try: g_file.delete()
             except: pass
@@ -172,7 +169,9 @@ with col2:
     if analyze_btn and uploaded_files:
         resultado = analizar_documentos(uploaded_files)
         
-        # No es necesario imprimir resultado de nuevo aquí porque ya se muestra dentro de la función
-        # Pero mantenemos la estructura por si quieres agregar algo más
+        if resultado:
+            st.success("Análisis generado con éxito")
+            st.markdown("---")
+            st.markdown(resultado)
     elif not uploaded_files:
         st.warning("👈 Sube al menos un archivo PDF para ver el análisis aquí.")
