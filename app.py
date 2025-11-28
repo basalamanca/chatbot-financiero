@@ -18,7 +18,7 @@ Sube los Estados Financieros (PDF).
 
 # --- CONFIGURACIÓN DE API (LLAVE FIJA) ---
 # Tu llave ya está configurada aquí para que el comercial no tenga que ponerla.
-api_key = "AIzaSyBQwo3Mt9prYyvlQJrOq2NdJ4hpCDtTN-o"
+api_key = "AIzaSyA4CBrLnh85FHGyMptRimalbMSSCMQqtbc"
 
 # Configurar Gemini
 try:
